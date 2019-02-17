@@ -6,7 +6,7 @@ const fs = require('promise-fs');
 const settings = {
 	redis_url: 'redis://localhost',
 	local_csv: 'dumped.csv',
-	users_per_request: 21,
+	users_per_request: 25,
 	request_interval: 1000/3,
 	tokens: [
 		'there was a private token',
@@ -64,8 +64,16 @@ const getLinks = async (access_token, start_user_id, amount) => {
 	const url = `https://api.vk.com/method/execute`;
 	const code = `var start=${start_user_id},count=${amount},result=[];while(count=count-1){var sizes=API.photos.getAll({"photo_sizes":1,"owner_id":start=start+1,}).items@.sizes;var photos=[];while(sizes.length){var current_sizes=sizes.pop();var max_size=current_sizes.pop();if(max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){photos.push(current_sizes[current_sizes.length-3].url);}else{photos.push(max_size.url);}}result.push([start,photos]);}return result;`;
 	const data = await request.post(url, {form: {code, access_token, v:'5.92'}, json: true});
-	if (data.error)
-		console.error(data.error);
+	if (data.error) {
+		if (data.error.error_code === 13) {
+			console.log('[!] Retrying..');
+			const first_part = await getLinks(access_token, start_user_id, Math.floor(amount/2));
+			const last_part = await getLinks(access_token, start_user_id+Math.floor(amount/2), Math.ceil(amount/2));
+			return [...first_part, ...last_part];
+		} else {
+			console.error(data.error);
+		}
+	}
 	return data.response || []; // [id, [...photos]];
 };
 
