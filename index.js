@@ -10,6 +10,9 @@ const settings = {
 	request_interval: 1000/3,
 	tokens: [
 		'there was a private token',
+		'there was a private token',
+		'there was a private token',
+		'there was a private token',
 		'there was a private token'
 	]
 };
@@ -62,11 +65,11 @@ const getLinks = async (access_token, start_user_id, amount) => {
 	lastRequestPerToken.set(access_token, Date.now());
 
 	const url = `https://api.vk.com/method/execute`;
-	const code = `var start=${start_user_id},count=${amount},result=[];while(count=count-1){var sizes=API.photos.getAll({"photo_sizes":1,"owner_id":start=start+1,}).items@.sizes;var photos=[];while(sizes.length){var current_sizes=sizes.pop();var max_size=current_sizes.pop();if(max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){photos.push(current_sizes[current_sizes.length-3].url);}else{photos.push(max_size.url);}}result.push([start,photos]);}return result;`;
+	const code = `var start=${start_user_id},count=${amount},result=[];while(count=count-1){var sizes=API.photos.get({"album_id":"profile","photo_sizes":1,"owner_id":start=start+1,}).items@.sizes;var photos=[];while(sizes.length){var current_sizes=sizes.pop();var max_size=current_sizes.pop();if(max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){photos.push(current_sizes[current_sizes.length-3].url);}else{photos.push(max_size.url);}}result.push([start,photos]);}return result;`;
 	const data = await request.post(url, {form: {code, access_token, v:'5.92'}, json: true});
 	if (data.error) {
 		if (data.error.error_code === 13) {
-			console.log('[!] Retrying..');
+			console.log('[!] Повтор.. Возможно, следует снизить количество пользователей на запрос');
 			const first_part = await getLinks(access_token, start_user_id, Math.floor(amount/2));
 			const last_part = await getLinks(access_token, start_user_id+Math.floor(amount/2), Math.ceil(amount/2));
 			return [...first_part, ...last_part];
