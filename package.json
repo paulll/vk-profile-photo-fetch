@@ -1,0 +1,24 @@
+{
+  "name": "vk-photo-dumper",
+  "version": "1.0.0",
+  "description": "save (id, photo_url) pair for each user",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "vk",
+    "data_mining",
+    "distributed",
+    "api"
+  ],
+  "author": "paulll",
+  "license": "MIT",
+  "dependencies": {
+    "bluebird": "^3.5.3",
+    "promise-fs": "^2.0.1",
+    "redis": "^2.8.0",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.4"
+  }
+}
