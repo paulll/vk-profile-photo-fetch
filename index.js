@@ -7,12 +7,12 @@ const settings = {
 	redis_url: 'redis://localhost',
 	local_csv: 'dumped.csv',
 	tokens: [
+		'there was a private token',
 		'there was a private token'
 	]
 };
 
-const main = async () => {
-	const users_per_api_request = 25*1000;
+const main = async () => {;
 	const tokens = settings.tokens;
 
 	const redis_db = redis.createClient(settings.redis_url);
@@ -35,10 +35,10 @@ const main = async () => {
 	process.on('SIGINT', exit);
 
 	while (keep_running) {
-		const tasks = (await getTasks(redis_db, users_per_api_request*tokens.length)).chunk(users_per_api_request).chunk(tokens.length);
+		const tasks = (await getTasks(redis_db, 25*tokens.length)).chunk(25).chunk(tokens.length);
 
 		for (let parallel_chunk of tasks) {
-			const completed = flatten(await Promise.all(parallel_chunk.map((task,i) => getLinks(tokens[i%tokens.length], task))));
+			const completed = flatten(await Promise.all(parallel_chunk.map((task,i) => getLinks(tokens[i%tokens.length], task[0]))));
 			await saveLinks(local_db, completed);
 
 			console.log(`[*] Загружено ${stat_users_loaded += completed.length} юзеров | ${Math.round(stat_users_loaded/(Date.now() - stat_start_time)*1000)} в сек`);
@@ -49,7 +49,7 @@ const main = async () => {
 };
 
 let lastRequestPerToken = new Map;
-const getLinks = async (access_token, user_ids) => {
+const getLinks = async (access_token, start_user_id) => {
 	// throttle
 	if (lastRequestPerToken.has(access_token)) {
 		const delay = lastRequestPerToken.get(access_token) + 333 - Date.now();
@@ -58,10 +58,9 @@ const getLinks = async (access_token, user_ids) => {
 	}
 	lastRequestPerToken.set(access_token, Date.now());
 
-	const code = 'return [' + user_ids.chunk(1000).map(chunk => `API.users.get({"user_ids": "${chunk.join(',')}","fields":"photo_max_orig"})@.photo_max_orig`).join(',') + '];';
-	const url = `https://api.vk.com/method/execute`;
-	const data = await request.post(url, {form: {code, access_token, v:5.56}, json: true});
-	return flatten(data.response).map((photo,i) => ([user_ids[i], photo]));
+	const url = `https://api.vk.com/method/execute.getAllPhotos`;
+	const data = await request.post(url, {form: {s: start_user_id, access_token, v:'5.92'}, json: true});
+	return data.response; // [id, [...photos]];
 };
 
 const getTasks = async (db, amount) => {
@@ -70,8 +69,8 @@ const getTasks = async (db, amount) => {
 };
 
 const saveLinks = async (db, links) => {
-	links = links.filter(([user, photo]) => !photo.includes('/vk.com/')); // deactivated, camera, etc.
-	return await fs.appendFile(db, links.map(([user, photo])=> `${photo.replace(/\?ava=1|https:\/\//g,'')}\t${user}`).join('\n'));
+	const lines = flatten(links.map(([user, photos]) => photos.map(photo => `${photo.replace('https:\/\/','')}\t${user}`)));
+	return await fs.appendFile(db, lines.join('\n'));
 };
 
 // etc
