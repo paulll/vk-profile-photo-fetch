@@ -12,7 +12,7 @@ const settings = {
 	]
 };
 
-const main = async () => {;
+const main = async () => {
 	const tokens = settings.tokens;
 
 	const redis_db = redis.createClient(settings.redis_url);
