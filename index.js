@@ -1,12 +1,18 @@
 const Promise = require('bluebird');
 const redis = require('redis');
 const request = require('request-promise');
+const ProxyAgent = require('https-proxy-agent');
 const fs = require('promise-fs');
 const settings = require('./settings');
 
 const main = async () => {
 	const tokens = settings.tokens;
 	const per_request = settings.users_per_request;
+	const proxies = settings.socks.map(addr => new ProxyAgent(addr))
+		.concat([undefined]); // for requests without proxy
+
+	let lastProxy = 0;
+	const nextProxy = () => proxies[(++lastProxy)%proxies.length];
 
 	const redis_db = redis.createClient(settings.redis_url);
 	const local_db = settings.local_csv;
@@ -31,7 +37,7 @@ const main = async () => {
 		const tasks = (await getTasks(redis_db, per_request*tokens.length)).chunk(per_request).chunk(tokens.length);
 
 		for (let parallel_chunk of tasks) {
-			const completed = flatten(await Promise.all(parallel_chunk.map((task,i) => getLinks(tokens[i%tokens.length], task[0], task[task.length-1]-task[0]))));
+			const completed = flatten(await Promise.all(parallel_chunk.map((task,i) => getLinks(tokens[i%tokens.length], task[0], task[task.length-1]-task[0], nextProxy()))));
 			await saveLinks(local_db, completed);
 			console.log(`[${(new Date()).toLocaleString()}][*] ${stat_users_loaded += completed.length} юзеров | ${Math.round(stat_users_loaded/(Date.now() - stat_start_time)*1000)} в сек`);
 		}
@@ -41,7 +47,7 @@ const main = async () => {
 };
 
 let lastRequestPerToken = new Map;
-const getLinks = async (access_token, start_user_id, amount) => {
+const getLinks = async (access_token, start_user_id, amount, agent) => {
 	// throttle
 	if (lastRequestPerToken.has(access_token)) {
 		const delay = lastRequestPerToken.get(access_token) + settings.request_interval - Date.now();
@@ -52,7 +58,7 @@ const getLinks = async (access_token, start_user_id, amount) => {
 
 	const url = `https://api.vk.com/method/execute`;
 	const code = `var start=${start_user_id},count=${amount},result=[];while(count=count-1){var sizes=API.photos.get({"album_id":"profile","photo_sizes":1,"owner_id":start=start+1,}).items@.sizes;var photos=[];while(sizes.length){var current_sizes=sizes.pop();var max_size=current_sizes.pop();if(max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){photos.push(current_sizes[current_sizes.length-3].url);}else{photos.push(max_size.url);}}result.push([start,photos]);}return result;`;
-	const data = await request.post(url, {form: {code, access_token, v:'5.92'}, json: true});
+	const data = await request.post(url, {agent, form: {code, access_token, v:'5.92'}, json: true});
 	if (data.error) {
 		if (data.error.error_code === 13) {
 			console.log(`[${(new Date()).toLocaleString()}][!] Ошибка execute.. Возможно, следует снизить количество пользователей на запрос`);
