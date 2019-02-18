@@ -33,8 +33,7 @@ const main = async () => {
 		for (let parallel_chunk of tasks) {
 			const completed = flatten(await Promise.all(parallel_chunk.map((task,i) => getLinks(tokens[i%tokens.length], task[0], task[task.length-1]-task[0]))));
 			await saveLinks(local_db, completed);
-
-			console.log(`[*] Загружено ${stat_users_loaded += completed.length} юзеров | ${Math.round(stat_users_loaded/(Date.now() - stat_start_time)*1000)} в сек`);
+			console.log(`[${(new Date()).toLocaleString()}][*] ${stat_users_loaded += completed.length} юзеров | ${Math.round(stat_users_loaded/(Date.now() - stat_start_time)*1000)} в сек`);
 		}
 	}
 
@@ -56,11 +55,18 @@ const getLinks = async (access_token, start_user_id, amount) => {
 	const data = await request.post(url, {form: {code, access_token, v:'5.92'}, json: true});
 	if (data.error) {
 		if (data.error.error_code === 13) {
-			console.log('[!] Повтор.. Возможно, следует снизить количество пользователей на запрос');
+			console.log(`[${(new Date()).toLocaleString()}][!] Ошибка execute.. Возможно, следует снизить количество пользователей на запрос`);
 			const first_part = await getLinks(access_token, start_user_id, Math.floor(amount/2));
 			const last_part = await getLinks(access_token, start_user_id+Math.floor(amount/2), Math.ceil(amount/2));
 			return [...first_part, ...last_part];
-		} else {
+		}
+
+		if (data.error.error_code === 6) {
+			console.log(`[${(new Date()).toLocaleString()}][!] Слишком много запросов в секунду, токен ${access_token.substr(0,8)}`);
+			return await getLinks(access_token,start_user_id,amount);
+		}
+
+		else {
 			console.error(data.error);
 		}
 	}
@@ -73,7 +79,13 @@ const getTasks = async (db, amount) => {
 };
 
 const saveLinks = async (db, links) => {
-	const lines = flatten(links.map(([user, photos]) => photos.map(photo => `${photo.replace('https:\/\/','')}\t${user}`)));
+	const clear_links = links.map(([user,photos]) => {
+		return photos.filter(photo => {
+			if (!photo) console.log(`[${(new Date()).toLocaleString()}][!] Отсутствует ссылка на фото пользователя ${user}`);
+			return !!photo;
+		});
+	});
+	const lines = flatten(clear_links.map(([user, photos]) => photos.map(photo => `${photo.replace('https:\/\/','')}\t${user}`)));
 	return await fs.appendFile(db, lines.join('\n'));
 };
 
