@@ -67,7 +67,7 @@ const getLinks = async (access_token, start_user_id, amount) => {
 		}
 
 		else {
-			console.error(data.error);
+			console.error(`[${(new Date()).toLocaleString()}][!!!] Неожиданная ошибка: `, data.error);
 		}
 	}
 	return data.response || []; // [id, [...photos]];
