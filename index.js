@@ -80,10 +80,10 @@ const getTasks = async (db, amount) => {
 
 const saveLinks = async (db, links) => {
 	const clear_links = links.map(([user,photos]) => {
-		return photos.filter(photo => {
-			if (!photo) console.log(`[${(new Date()).toLocaleString()}][!] Отсутствует ссылка на фото пользователя ${user}`);
+		return [user, photos.filter(photo => {
+			if (!photo) console.log(`[${(new Date()).toLocaleString()}][!!] Отсутствует ссылка на фото пользователя ${user}`);
 			return !!photo;
-		});
+		})];
 	});
 	const lines = flatten(clear_links.map(([user, photos]) => photos.map(photo => `${photo.replace('https:\/\/','')}\t${user}`)));
 	return await fs.appendFile(db, lines.join('\n'));
