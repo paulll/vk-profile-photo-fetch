@@ -61,6 +61,12 @@ const getLinks = async (access_token, start_user_id, amount) => {
 			return [...first_part, ...last_part];
 		}
 
+		if (data.error.error_code === 5) {
+			console.log(`[${(new Date()).toLocaleString()}][!!!] Токен ${access_token.substr(0,8)} невалидный`);
+			settings.tokens.splice(settings.tokens.indexOf(access_token),1);
+			return await getLinks(settings.tokens[0],start_user_id,amount);
+		}
+
 		if (data.error.error_code === 6) {
 			console.log(`[${(new Date()).toLocaleString()}][!] Слишком много запросов в секунду, токен ${access_token.substr(0,8)}`);
 			return await getLinks(access_token,start_user_id,amount);
