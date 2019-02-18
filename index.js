@@ -2,20 +2,7 @@ const Promise = require('bluebird');
 const redis = require('redis');
 const request = require('request-promise');
 const fs = require('promise-fs');
-
-const settings = {
-	redis_url: 'redis://localhost',
-	local_csv: 'dumped.csv',
-	users_per_request: 25,
-	request_interval: 1000/3,
-	tokens: [
-		'there was a private token',
-		'there was a private token',
-		'there was a private token',
-		'there was a private token',
-		'there was a private token'
-	]
-};
+const settings = require('./settings');
 
 const main = async () => {
 	const tokens = settings.tokens;
