@@ -5,14 +5,13 @@ const ProxyAgent = require('https-proxy-agent');
 const fs = require('promise-fs');
 const settings = require('./settings');
 
+const staleTokens = new Set;
+
 const main = async () => {
 	const tokens = settings.tokens;
 	const per_request = settings.users_per_request;
-	const proxies = settings.socks.map(addr => new ProxyAgent(addr))
+	const proxies = settings.proxies.map(addr => new ProxyAgent(addr))
 		.concat([undefined]); // for requests without proxy
-
-	let lastProxy = 0;
-	const nextProxy = () => proxies[(++lastProxy)%proxies.length];
 
 	const redis_db = redis.createClient(settings.redis_url);
 	const local_db = settings.local_csv;
@@ -33,32 +32,32 @@ const main = async () => {
 	process.on('SIGTERM', exit);
 	process.on('SIGINT', exit);
 
-	while (keep_running) {
-		const tasks = (await getTasks(redis_db, per_request*tokens.length)).chunk(per_request).chunk(tokens.length);
+	await Promise.all(tokens.map(async (token) => {
+		return await Promise.all(proxies.map(async (proxy) => {
+			let last = Date.now() - settings.request_interval - 100;
+			while (keep_running && !staleTokens.has(token)) {
+				const delay = last + settings.request_interval - Date.now();
+				if (delay > 0)
+					await Promise.delay(delay);
+				last = Date.now();
 
-		for (let parallel_chunk of tasks) {
-			const completed = flatten(await Promise.all(parallel_chunk.map((task,i) => getLinks(tokens[i%tokens.length], task[0], task[task.length-1]-task[0], nextProxy()))));
-			await saveLinks(local_db, completed);
-			console.log(`[${(new Date()).toLocaleString()}][*] ${stat_users_loaded += completed.length} юзеров | ${Math.round(stat_users_loaded/(Date.now() - stat_start_time)*1000)} в сек`);
-		}
-	}
+				const task = (await getTasks(redis_db, per_request));
+				const completed = await getLinks(token, task.start, task.amount, proxy);
+
+				await saveLinks(local_db, completed);
+				console.log(`[${(new Date()).toLocaleString()}][*] ${stat_users_loaded += completed.length} юзеров | ${Math.round(stat_users_loaded/(Date.now() - stat_start_time)*1000)} в сек`);
+			}
+		}));
+	}));
 
 	redis_db.quit();
 };
 
-let lastRequestPerToken = new Map;
 const getLinks = async (access_token, start_user_id, amount, agent) => {
-	// throttle
-	if (lastRequestPerToken.has(access_token)) {
-		const delay = lastRequestPerToken.get(access_token) + settings.request_interval - Date.now();
-		if (delay > 0)
-			await Promise.delay(delay);
-	}
-	lastRequestPerToken.set(access_token, Date.now());
-
 	const url = `https://api.vk.com/method/execute`;
-	const code = `var start=${start_user_id},count=${amount+2},result=[];while(count=count-1){var sizes=API.photos.get({"album_id":"profile","photo_sizes":1,"owner_id":start=start+1,}).items@.sizes;var photos=[];while(sizes.length){var current_sizes=sizes.pop();var max_size=current_sizes.pop();if(max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){photos.push(current_sizes[current_sizes.length-3].url);}else{photos.push(max_size.url);}}result.push([start,photos]);}return result;`;
+	const code = `var start=${start_user_id-1},count=${amount+1},result=[];while(count=count-1){var sizes=API.photos.get({"album_id":"profile","photo_sizes":1,"owner_id":start=start+1,}).items@.sizes;var photos=[];while(sizes.length){var current_sizes=sizes.pop();var max_size=current_sizes.pop();if(max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){photos.push(current_sizes[current_sizes.length-3].url);}else{photos.push(max_size.url);}}result.push([start,photos]);}return result;`;
 	const data = await request.post(url, {agent, form: {code, access_token, v:'5.92'}, json: true});
+
 	if (data.error) {
 		if (data.error.error_code === 13) {
 			console.log(`[${(new Date()).toLocaleString()}][!] Ошибка execute.. Возможно, следует снизить количество пользователей на запрос`);
@@ -69,7 +68,8 @@ const getLinks = async (access_token, start_user_id, amount, agent) => {
 
 		if (data.error.error_code === 5) {
 			console.log(`[${(new Date()).toLocaleString()}][!!!] Токен ${access_token.substr(0,8)} невалидный`);
-			settings.tokens.splice(settings.tokens.indexOf(access_token),1);
+			settings.tokens.splice(settings.tokens.indexOf(access_token), 1);
+			staleTokens.add(access_token);
 			return await getLinks(settings.tokens[0],start_user_id,amount);
 		}
 
@@ -86,8 +86,8 @@ const getLinks = async (access_token, start_user_id, amount, agent) => {
 };
 
 const getTasks = async (db, amount) => {
-	const offset = await db.incrbyAsync('vpd:current_user', amount);
-	return Array(amount).fill(offset-amount).map( (x,i) => x + i);
+	const offset = await db.incrbyAsync(settings.redis_key, amount);
+	return {start: offset-amount, amount};
 };
 
 const saveLinks = async (db, links) => {
@@ -104,15 +104,6 @@ const saveLinks = async (db, links) => {
 // etc
 
 Promise.promisifyAll(redis);
-
-Object.defineProperty(Array.prototype, 'chunk', {
-	value: function (chunkSize) {
-		let R = [];
-		for (let i=0; i<this.length; i+=chunkSize)
-			R.push(this.slice(i,i+chunkSize));
-		return R;
-	}
-});
 
 const flatten = (arr) => {
 	return [].concat.apply([], arr);
