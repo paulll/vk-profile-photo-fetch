@@ -61,6 +61,7 @@ const getLinks = async (access_token, start_user_id, amount, agent) => {
 	if (data.error) {
 		if (data.error.error_code === 13) {
 			console.log(`[${(new Date()).toLocaleString()}][!] Ошибка execute.. Возможно, следует снизить количество пользователей на запрос`);
+			await Promise.delay(settings.request_interval);
 			const first_part = await getLinks(access_token, start_user_id, Math.floor(amount/2));
 			const last_part = await getLinks(access_token, start_user_id+Math.floor(amount/2), Math.ceil(amount/2));
 			return [...first_part, ...last_part];
@@ -75,6 +76,7 @@ const getLinks = async (access_token, start_user_id, amount, agent) => {
 
 		if (data.error.error_code === 6) {
 			console.log(`[${(new Date()).toLocaleString()}][!] Слишком много запросов в секунду, токен ${access_token.substr(0,8)}`);
+			await Promise.delay(settings.request_interval);
 			return await getLinks(access_token,start_user_id,amount);
 		}
 
