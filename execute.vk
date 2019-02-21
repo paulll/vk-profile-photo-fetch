@@ -1,0 +1,22 @@
+var start=__start__,
+    count=__count__,
+    result=[];
+while (count=count-1) {
+    var photos=[],
+    sizes=API.photos.get({
+        "album_id":"profile",
+        "photo_sizes":1,
+        "owner_id":start=start+1
+    }).items@.sizes;
+    while (sizes.length){
+        var current_sizes=sizes.pop(),
+            max_size=current_sizes.pop();
+        if (max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){
+            photos.push(current_sizes[current_sizes.length-3].url);
+        } else {
+            photos.push(max_size.url);
+        }
+    }
+    result.push([start,photos]);
+}
+return result;

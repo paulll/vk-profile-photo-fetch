@@ -5,7 +5,11 @@ const ProxyAgent = require('https-proxy-agent');
 const fs = require('promise-fs');
 const settings = require('./settings');
 
-const staleTokens = new Set;
+const execute_template = fs.readFileSync(`${__dirname}/execute.vk`, {encoding: 'utf8'});
+
+Promise.promisifyAll(redis);
+const flatten = (arr) => [].concat.apply([], arr);
+const stale_tokens = new Set;
 
 const main = async () => {
 	const tokens = settings.tokens;
@@ -35,7 +39,7 @@ const main = async () => {
 	await Promise.all(tokens.map(async (token) => {
 		return await Promise.all(proxies.map(async (proxy) => {
 			let last = Date.now() - settings.request_interval - 100;
-			while (keep_running && !staleTokens.has(token)) {
+			while (keep_running && !stale_tokens.has(token)) {
 				const delay = last + settings.request_interval - Date.now();
 				if (delay > 0)
 					await Promise.delay(delay);
@@ -50,12 +54,17 @@ const main = async () => {
 		}));
 	}));
 
+	for (let stale of stale_tokens)
+		console.log(`[!] Удалите заблокированный токен: ${stale}`);
+
 	redis_db.quit();
 };
 
 const getLinks = async (access_token, start_user_id, amount, agent) => {
 	const url = `https://api.vk.com/method/execute`;
-	const code = `var start=${start_user_id-1},count=${amount+1},result=[];while(count=count-1){var sizes=API.photos.get({"album_id":"profile","photo_sizes":1,"owner_id":start=start+1,}).items@.sizes;var photos=[];while(sizes.length){var current_sizes=sizes.pop();var max_size=current_sizes.pop();if(max_size.type=="z"&&current_sizes[current_sizes.length-3].type=="w"){photos.push(current_sizes[current_sizes.length-3].url);}else{photos.push(max_size.url);}}result.push([start,photos]);}return result;`;
+	const code = execute_template
+		.replace('__start__', start_user_id-1)
+		.replace('__count__', amount+1);
 	const data = await request.post(url, {agent, form: {code, access_token, v:'5.92'}, json: true});
 
 	if (data.error) {
@@ -70,7 +79,7 @@ const getLinks = async (access_token, start_user_id, amount, agent) => {
 		if (data.error.error_code === 5) {
 			console.log(`[${(new Date()).toLocaleString()}][!!!] Токен ${access_token.substr(0,8)} невалидный`);
 			settings.tokens.splice(settings.tokens.indexOf(access_token), 1);
-			staleTokens.add(access_token);
+			stale_tokens.add(access_token);
 			return await getLinks(settings.tokens[0],start_user_id,amount);
 		}
 
@@ -80,9 +89,7 @@ const getLinks = async (access_token, start_user_id, amount, agent) => {
 			return await getLinks(access_token,start_user_id,amount);
 		}
 
-		else {
-			console.error(`[${(new Date()).toLocaleString()}][!!!] Неожиданная ошибка: `, data.error);
-		}
+		console.error(`[${(new Date()).toLocaleString()}][!!!] Неожиданная ошибка: `, data.error);
 	}
 	return data.response || []; // [id, [...photos]];
 };
@@ -101,14 +108,6 @@ const saveLinks = async (db, links) => {
 	});
 	const lines = flatten(clear_links.map(([user, photos]) => photos.map(photo => `${photo.replace('https:\/\/','')}\t${user}`)));
 	return await fs.appendFile(db, lines.join('\n'));
-};
-
-// etc
-
-Promise.promisifyAll(redis);
-
-const flatten = (arr) => {
-	return [].concat.apply([], arr);
 };
 
 main();

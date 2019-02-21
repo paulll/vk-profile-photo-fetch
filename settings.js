@@ -5,14 +5,7 @@ module.exports = {
 	users_per_request: 25,
 	request_interval: 1000/3,
 	tokens: [
-		'there was a private token',
-		'there was a private token',
-		'there was a private token',
-		'there was a private token',
-		'there was a private token'
+		'' // any access_token with scope=offline,photos
 	],
-	proxies: Array(0) // количество
-		.fill(10000) // стартовый порт
-		.map((x,i)=>`http://user:password@proxy.local:${x+i}`)
-	// можно указать и просто списком ['http://...', 'http://...']
+	proxies: []
 };
